@@ -1,7 +1,15 @@
-//2.6.-2.11
+//2.6.-2.11  2.15-2.20
 
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import personService from './services/person';
+import './index.css';
+
+const Notification = ({ message }) => {
+    if (message.msg === null) {
+        return null;
+    }
+    return <div className={message.type}>{message.msg}</div>;
+};
 
 const Filter = ({ filterWord, handleChangeFilter }) => (
     <>
@@ -28,7 +36,7 @@ const PersonForm = ({
         </div>
     </form>
 );
-const Persons = ({ persons, filterWord }) => (
+const Persons = ({ persons, filterWord, reqPerson }) => (
     <>
         {persons
             .filter((person) =>
@@ -37,9 +45,24 @@ const Persons = ({ persons, filterWord }) => (
                     .includes(filterWord.trim().toLowerCase())
             )
             .map((person) => (
-                <p key={person.name}>
-                    {person.name} {person.number}
-                </p>
+                <>
+                    <div key={person.id}>
+                        {person.name} {person.number}{' '}
+                        <button
+                            onClick={() => {
+                                if (window.confirm(`Delete ${person.name}?`)) {
+                                    personService
+                                        .deleteById(person.id)
+                                        .then(() => {
+                                            reqPerson();
+                                        });
+                                }
+                            }}
+                        >
+                            delete
+                        </button>
+                    </div>
+                </>
             ))}
     </>
 );
@@ -49,13 +72,18 @@ const App = () => {
     const [newName, setNewName] = useState('');
     const [newNumber, setNewNumber] = useState('');
     const [filterWord, setFilterWord] = useState('');
+    const [errorMessage, setErrorMessage] = useState({
+        type: 'error',
+        msg: null,
+    });
+    const reqPerson = () => {
+        personService.getAll().then((response) => {
+            setPersons(response);
+        });
+    };
 
     useEffect(() => {
-        axios.get('http://localhost:3001/persons').then((response) => {
-            setPersons((prePersons) => {
-                return [...prePersons, ...response.data];
-            });
-        });
+        reqPerson();
     }, []);
 
     const handleSubmit = (e) => {
@@ -66,17 +94,60 @@ const App = () => {
         }
 
         if (persons.find((person) => person.name === newName)) {
-            alert(`name:${newName} is already added to phonebook`);
+            if (
+                window.confirm(
+                    `name:${newName} is already added to phonebook,replace old number?`
+                )
+            ) {
+                personService
+                    .update(
+                        persons.find((person) => person.name === newName).id,
+                        {
+                            name: newName,
+                            number: newNumber,
+                        }
+                    )
+                    .then(() => {
+                        reqPerson();
+                    })
+                    .catch(() => {
+                        setErrorMessage({
+                            type: 'error',
+                            msg: `${newName} has already been remove`,
+                        });
+                        setTimeout(() => {
+                            setErrorMessage({
+                                type: 'error',
+                                msg: null,
+                            });
+                        }, 5000);
+                    });
+            }
         } else if (persons.find((person) => person.number === newNumber)) {
             alert(`phone number:${newNumber} is already added to phonebook`);
         } else {
-            setPersons((prePersons) => {
-                const clone = [...prePersons];
-                clone.push({ name: newName, number: newNumber });
-                return clone;
-            });
-            setNewName('');
-            setNewNumber('');
+            personService
+                .create({
+                    name: newName,
+                    number: newNumber,
+                })
+                .then((response) => {
+                    setPersons((prePersons) => {
+                        return [...prePersons, response];
+                    });
+                    setErrorMessage({
+                        type: 'success',
+                        msg: `Added ${response.name}`,
+                    });
+                    setTimeout(() => {
+                        setErrorMessage({
+                            type: 'error',
+                            msg: null,
+                        });
+                    }, 5000);
+                    setNewName('');
+                    setNewNumber('');
+                });
         }
     };
     const handleChangeName = (e) => {
@@ -95,6 +166,7 @@ const App = () => {
                 filterWord={filterWord}
                 handleChangeFilter={handleChangeFilter}
             />
+
             <h3>Add a new</h3>
             <PersonForm
                 newName={newName}
@@ -103,8 +175,13 @@ const App = () => {
                 handleChangeName={handleChangeName}
                 handleChangeNumber={handleChangeNumber}
             />
+            <Notification message={errorMessage} />
             <h3>Numbers</h3>
-            <Persons persons={persons} filterWord={filterWord} />
+            <Persons
+                persons={persons}
+                filterWord={filterWord}
+                reqPerson={reqPerson}
+            />
         </div>
     );
 };
